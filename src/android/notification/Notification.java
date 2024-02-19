@@ -28,11 +28,11 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.media.AudioManager;
 import android.net.Uri;
 import android.service.notification.StatusBarNotification;
-import android.util.Pair;
-import android.util.Log;
+import android.support.v4.app.NotificationCompat;
+import android.support.v4.util.ArraySet;
+import android.support.v4.util.Pair;
 import android.util.SparseArray;
 
 import org.json.JSONException;
@@ -43,24 +43,14 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
-
-import androidx.collection.ArraySet;
-import androidx.core.app.NotificationCompat;
 
 import static android.app.AlarmManager.RTC;
 import static android.app.AlarmManager.RTC_WAKEUP;
-import static android.app.PendingIntent.FLAG_UPDATE_CURRENT;
+import static android.app.PendingIntent.FLAG_CANCEL_CURRENT;
 import static android.os.Build.VERSION.SDK_INT;
 import static android.os.Build.VERSION_CODES.M;
-import static androidx.core.app.NotificationCompat.PRIORITY_HIGH;
-import static androidx.core.app.NotificationCompat.PRIORITY_MAX;
-import static androidx.core.app.NotificationCompat.PRIORITY_MIN;
-import static java.lang.Thread.sleep;
+import static android.support.v4.app.NotificationManagerCompat.IMPORTANCE_MAX;
+import static android.support.v4.app.NotificationManagerCompat.IMPORTANCE_MIN;
 
 /**
  * Wrapper class around OS notification class. Handles basic operations
@@ -125,36 +115,29 @@ public final class Notification {
     /**
      * Get application context.
      */
-    public Context getContext() {
+    public Context getContext () {
         return context;
     }
 
     /**
      * Get notification options.
      */
-    public Options getOptions() {
+    public Options getOptions () {
         return options;
     }
 
     /**
      * Get notification ID.
      */
-    public int getId() {
+    public int getId () {
         return options.getId();
     }
 
     /**
      * If it's a repeating notification.
      */
-    public boolean isRepeating() {
+    private boolean isRepeating () {
         return getOptions().getTrigger().has("every");
-    }
-
-    /**
-     * If the notifications priority is high or above.
-     */
-    public boolean isHighPrio() {
-        return getOptions().getPrio() >= PRIORITY_HIGH;
     }
 
     /**
@@ -190,8 +173,6 @@ public final class Notification {
         do {
             Date date = request.getTriggerDate();
 
-            Log.d("local-notification", "Next trigger at: " + date);
-
             if (date == null)
                 continue;
 
@@ -226,19 +207,18 @@ public final class Notification {
                 continue;
 
             PendingIntent pi = PendingIntent.getBroadcast(
-                    context, 0, intent, FLAG_UPDATE_CURRENT);
+                    context, 0, intent, FLAG_CANCEL_CURRENT);
 
             try {
-                switch (options.getPrio()) {
-                    case PRIORITY_MIN:
+                switch (options.getPriority()) {
+                    case IMPORTANCE_MIN:
                         mgr.setExact(RTC, time, pi);
                         break;
-                    case PRIORITY_MAX:
+                    case IMPORTANCE_MAX:
                         if (SDK_INT >= M) {
-                            AlarmManager.AlarmClockInfo info = new AlarmManager.AlarmClockInfo(time, pi);
-                            mgr.setAlarmClock(info, pi);
+                            mgr.setExactAndAllowWhileIdle(RTC_WAKEUP, time, pi);
                         } else {
-                            mgr.setExact(RTC_WAKEUP, time, pi);
+                            mgr.setExact(RTC, time, pi);
                         }
                         break;
                     default:
@@ -328,13 +308,11 @@ public final class Notification {
     public void show() {
         if (builder == null) return;
 
-        if (options.showChronometer()) {
+        if (options.isWithProgressBar()) {
             cacheBuilder();
         }
 
         grantPermissionToPlaySoundFromExternal();
-        new NotificationVolumeManager(context, options)
-            .adjustAlarmVolume();
         getNotMgr().notify(getId(), builder.build());
     }
 
@@ -449,7 +427,7 @@ public final class Notification {
     /**
      * Caches the builder instance so it can be used later.
      */
-    private void cacheBuilder() {
+    private void cacheBuilder () {
 
         if (cache == null) {
             cache = new SparseArray<NotificationCompat.Builder>();
